@@ -7,7 +7,6 @@ from telethon.sessions import StringSession
 # Environment variables
 API_ID = int(os.environ.get("TELEGRAM_API_ID"))
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL")
 SESSION_STRING = os.environ.get("TELEGRAM_SESSION", "").strip()
 
@@ -59,24 +58,18 @@ def get_matching_image(text):
 
 async def main():
     if not SESSION_STRING:
-        print("XATO: TELEGRAM_SESSION topilmadi! Secrets bo'limini tekshiring.")
+        print("XATO: TELEGRAM_SESSION kodi topilmadi!")
         return
 
-    # USER CLIENT — Kanallarni o'qish uchun akkauntingiz
-    user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
-    # BOT CLIENT — Kanalingizga post va rasm joylash uchun bot
-    bot_client = TelegramClient('bot_session', API_ID, API_HASH)
-
-    # Akkaunt va Botni ulash
-    await user_client.start()
-    await bot_client.start(bot_token=BOT_TOKEN)
+    # Faqat User Client ishlatiladi
+    client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+    await client.start()
 
     start_date = datetime(2026, 8, 18, tzinfo=timezone.utc)
 
     for channel in CHANNELS:
         try:
-            # DIQQAT: iter_messages aynan user_client orqali ishlaydi
-            async for message in user_client.iter_messages(channel, limit=15):
+            async for message in client.iter_messages(channel, limit=15):
                 if message.date >= start_date:
                     post_text = message.text or message.caption or ""
                     
@@ -84,17 +77,16 @@ async def main():
                         github_image = get_matching_image(post_text)
                         
                         if github_image and os.path.exists(github_image):
-                            await bot_client.send_file(TARGET_CHANNEL, file=github_image, caption=post_text)
+                            await client.send_file(TARGET_CHANNEL, file=github_image, caption=post_text)
                         else:
-                            await bot_client.send_message(TARGET_CHANNEL, post_text)
+                            await client.send_message(TARGET_CHANNEL, post_text)
                         
-                        print(f"-> {channel} kanalidan post muvaffaqiyatli jo'natildi!")
+                        print(f"-> {channel} kanalidan post jo'natildi!")
                         await asyncio.sleep(2)
         except Exception as e:
             print(f"{channel} xatosi: {e}")
 
-    await user_client.disconnect()
-    await bot_client.disconnect()
+    await client.disconnect()
 
 if __name__ == "__main__":
     asyncio.run(main())
