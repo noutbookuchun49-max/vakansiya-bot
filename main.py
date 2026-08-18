@@ -1,17 +1,14 @@
 import os
 import asyncio
-from datetime import datetime, timezone, timedelta
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
-# Environment variables
 API_ID = int(os.environ.get("TELEGRAM_API_ID"))
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL")
 SESSION_STRING = os.environ.get("TELEGRAM_SESSION")
 
-# Kuzatiladigan kanallar
 CHANNELS = [
     "@iivuz",
     "@vakansyuz",
@@ -21,14 +18,12 @@ CHANNELS = [
     "@vacancy_argos"
 ]
 
-# GitHub papkasidan mos rasmni topish (Faqat GitHub rasmlaridan foydalanadi)
 def find_image_by_prefix(prefix):
     for filename in os.listdir("."):
         if filename.lower().startswith(prefix.lower()) and filename.lower().endswith(('.jpeg', '.jpg', '.png')):
             return filename
     return None
 
-# Post matniga qarab GitHub'dagi mos rasmni tanlash
 def get_matching_image(text):
     text_lower = text.lower() if text else ""
     
@@ -57,7 +52,6 @@ def get_matching_image(text):
     elif any(word in text_lower for word in ["operator", "call-center", "dispetcher"]):
         return find_image_by_prefix("Operator_working")
         
-    # Standard GitHub rasmi
     return find_image_by_prefix("7")
 
 async def main():
@@ -67,26 +61,23 @@ async def main():
     await user_client.start()
     await bot_client.start(bot_token=BOT_TOKEN)
 
-    # 18-avgust va undan keyingi kunlardagi postlarni tekshiradi
-    start_date = datetime(2026, 8, 18, tzinfo=timezone.utc)
-
     for channel in CHANNELS:
         try:
-            async for message in user_client.iter_messages(channel, limit=20):
-                if message.date >= start_date:
-                    # Begona rasmlarga qaralamaydi, FAQT MATN olinadi
-                    post_text = message.text or message.caption or ""
+            # Limitni 50 ta qildik va sana cheklovini olib tashladik
+            async for message in user_client.iter_messages(channel, limit=50):
+                post_text = message.text or message.caption or ""
+                
+                if post_text.strip():
+                    github_image = get_matching_image(post_text)
                     
-                    if post_text.strip():
-                        # Faqat GitHub'dagi rasm olinadi
-                        github_image = get_matching_image(post_text)
-                        
-                        if github_image and os.path.exists(github_image):
-                            await bot_client.send_file(TARGET_CHANNEL, file=github_image, caption=post_text)
-                        else:
-                            await bot_client.send_message(TARGET_CHANNEL, post_text)
-                        
-                        await asyncio.sleep(2)
+                    if github_image and os.path.exists(github_image):
+                        await bot_client.send_file(TARGET_CHANNEL, file=github_image, caption=post_text)
+                    else:
+                        await bot_client.send_message(TARGET_CHANNEL, post_text)
+                    
+                    print(f"-> {channel} kanalidan xabar yuborildi!")
+                    await asyncio.sleep(2)
+                    break # Har bir kanaldan eng oxirgi 1 ta mos xabarni yuboradi
         except Exception as e:
             print(f"{channel} xatosi: {e}")
 
