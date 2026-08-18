@@ -8,13 +8,7 @@ API_ID = int(os.environ.get("TELEGRAM_API_ID"))
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL")
-
-# Base64 padding xatosini oldini olish
-raw_session = os.environ.get("TELEGRAM_SESSION", "").strip()
-missing_padding = len(raw_session) % 4
-if missing_padding:
-    raw_session += '=' * (4 - missing_padding)
-SESSION_STRING = raw_session
+SESSION_STRING = os.environ.get("TELEGRAM_SESSION")
 
 # Kuzatish kerak bo'lgan kanallar
 CHANNELS = [
@@ -27,29 +21,27 @@ CHANNELS = [
 ]
 
 async def main():
-    # User Client — kanallardan postlarni O'QISH uchun
+    # User Client — kanallarni o'qish uchun
     user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
     
-    # Bot Client — o'zingizning kanalingizga YUBORISH uchun
+    # Bot Client — o'zingizning kanalingizga yuborish uchun
     bot_client = TelegramClient('bot_session', API_ID, API_HASH)
     
     await user_client.start()
     await bot_client.start(bot_token=BOT_TOKEN)
     
-    print("Clientlar muvaffaqiyatli ishga tushdi.")
+    print("Muvaffaqiyatli ulandi!")
 
     for channel in CHANNELS:
         print(f"Kanal tekshirilmoqda: {channel}")
         try:
-            # POSTLARNI USER CLIENT O'QIYDI (xatolik bermaydi)
             async for message in user_client.iter_messages(channel, limit=3):
                 if message.text:
-                    # Target kanalga BOT yuboradi
                     await bot_client.send_message(TARGET_CHANNEL, message.text)
                     print(f"-> {channel} kanalidan post yuborildi!")
                     break 
         except Exception as e:
-            print(f"{channel} kanalini o'qishda xatolik yuz berdi: {e}")
+            print(f"{channel} kanalida xatolik: {e}")
 
     await user_client.disconnect()
     await bot_client.disconnect()
