@@ -25,54 +25,38 @@ DB_FILE = 'posted_ids.json'
 def get_matching_image(text):
     """Matnga qarab repositoriyadagi mos rasm faylini topadi"""
     txt = text.lower()
-    
     all_files = os.listdir('.')
     prefix = 'Office_worker_sitting_at'
     
-    # 1. IIB / Politsiya
     if any(k in txt for k in ['iib', 'iiv', 'militsiya', 'politsiya', 'patrul', 'tadbirlar', 'qo\'riqlash']):
         prefix = 'Police_officer_standing_near'
-    # 2. Maktab / O'qituvchi
     elif any(k in txt for k in ['o\'qituvchi', 'pedagog', 'maktab', 'dars', 'ta\'lim', 'tarbiyachi', 'repetitor']):
         prefix = 'Teacher_explaining_lesson_at'
-    # 3. Shifokor / Hamshira
     elif any(k in txt for k in ['shifokor', 'vrach', 'hamshira', 'tibbiyot', 'med', 'doktor', 'klinika', 'dorixona']):
         prefix = 'Doctor_smiling_in_hospital_hallway'
-    # 4. IT / Dasturchi
     elif any(k in txt for k in ['dasturchi', 'developer', 'python', 'php', 'frontend', 'backend', 'it ', 'kompyuter', 'smm', 'dizayner']):
         prefix = 'Software_developer_coding_on'
-    # 5. Bank / Moliya
     elif any(k in txt for k in ['bank', 'moliya', 'buxgalter', 'gaznachilik', 'kassa', 'kassir', 'kredit']):
         prefix = 'Bank_employee_assisting_client'
-    # 6. Zavod / Ishlab chiqarish
     elif any(k in txt for k in ['zavod', 'sekh', 'fabrika', 'ishlab chiqarish', 'stanok', 'sex', 'texnik']):
         prefix = 'Worker_operating_manufacturing'
-    # 8. Huquq / Yurist
     elif any(k in txt for k in ['yurist', 'advokat', 'sudya', 'huquq', 'notarius', 'yuriskonsult']):
         prefix = 'Lawyer_standing_in_law_office'
-    # 9. Savdo / Sotuvchi
     elif any(k in txt for k in ['sotuvchi', 'savdo', 'do\'kon', 'market', 'administrator', 'konsultant']):
         prefix = 'Shop_seller_arranging_grocery'
-    # 10. Haydovchi / Logistika
     elif any(k in txt for k in ['haydovchi', 'voditel', 'dostavka', 'yetkazib', 'taksi', 'moshina']):
         prefix = 'Truck_driver_smiling_on_highway'
-    # 11. Oshpaz / Restoran
     elif any(k in txt for k in ['oshpaz', 'povar', 'fastfood', 'oshxona', 'restoran', 'kafe', 'pitsa', 'ofitsiant']):
         prefix = 'Chef_plating_dish_in_kitchen'
-    # 12. Qurilish
     elif any(k in txt for k in ['qurilish', 'prorab', 'g\'isht', 'stroyka', 'payvandchi', 'svarchik', 'usta']):
         prefix = 'Construction_worker_working_on'
-    # 13. Tozalash
     elif any(k in txt for k in ['tozalash', 'uborka', 'klining', 'farrosh']):
         prefix = 'Cleaner_cleaning_commercial'
-    # 14. Operator / Call-center
     elif any(k in txt for k in ['operator', 'call-center', 'muloqot', 'qo\'ng\'iroq']):
         prefix = 'Operator_working_on_computer'
-    # 15. Ombor
     elif any(k in txt for k in ['ombor', 'sklad', 'gruzchik', 'yuklovchi']):
         prefix = 'Worker_checking_inventory'
 
-    # Papkadan mos rasm nomini topish
     for f in all_files:
         if f.startswith(prefix):
             return f
@@ -102,62 +86,66 @@ async def main():
     posted_ids = load_posted_ids()
     bot = Bot(token=BOT_TOKEN)
     
-    async with TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH) as client:
-        for channel in SOURCE_CHANNELS:
-            try:
-                print(f"Kanal tekshirilmoqda: {channel}")
-                messages = await client.get_messages(channel, limit=30)
+    # Userbot sifatida ulanish uchun StringSession ishlatiladi
+    user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+    await user_client.start()
+    
+    for channel in SOURCE_CHANNELS:
+        try:
+            print(f"Kanal tekshirilmoqda: {channel}")
+            # Userbot kanaldagi postlar tarixini o'qiydi
+            messages = await user_client.get_messages(channel, limit=30)
+            
+            for msg in reversed(messages):
+                post_identifier = f"{channel}_{msg.id}"
+                post_text = msg.text or msg.caption
                 
-                for msg in reversed(messages):
-                    post_identifier = f"{channel}_{msg.id}"
-                    post_text = msg.text or msg.caption
+                if post_identifier not in posted_ids and post_text:
+                    caption_footer = (
+                        "\n\n— — — — — — — — — — — — — — — —\n"
+                        "Ko'pchilik ish izlayotganlar **\"Oddiy ma'lumotnoma bo'lsa bo'ldiku\"** "
+                        "deb o'ylashadi. Lekin davlat tashkilotlari birinchi navbatda "
+                        "rezumeyingizga qarab baho beradi!\n\n"
+                        "💡 Sifatli rezumeda nimalar bo'lishi kerak:\n"
+                        "1️⃣ Rasmiy va sifatli fotosurat\n"
+                        "2️⃣ Ma'lumotingiz va mutaxassisligingiz\n"
+                        "3️⃣ Ish tajribangiz va ko'nikmalaringiz\n\n"
+                        "⚠️ Sifatsiz va xato yozilgan rezume ishga kirish imkoniyatini keskin kamaytiradi!\n\n"
+                        "👉 Professional rezume tayyorlatish uchun tugmani bosing:"
+                    )
                     
-                    if post_identifier not in posted_ids and post_text:
-                        
-                        caption_footer = (
-                            "\n\n— — — — — — — — — — — — — — — —\n"
-                            "Ko'pchilik ish izlayotganlar **\"Oddiy ma'lumotnoma bo'lsa bo'ldiku\"** "
-                            "deb o'ylashadi. Lekin davlat tashkilotlari birinchi navbatda "
-                            "rezumeyingizga qarab baho beradi!\n\n"
-                            "💡 Sifatli rezumeda nimalar bo'lishi kerak:\n"
-                            "1️⃣ Rasmiy va sifatli fotosurat\n"
-                            "2️⃣ Ma'lumotingiz va mutaxassisligingiz\n"
-                            "3️⃣ Ish tajribangiz va ko'nikmalaringiz\n\n"
-                            "⚠️ Sifatsiz va xato yozilgan rezume ishga kirish imkoniyatini keskin kamaytiradi!\n\n"
-                            "👉 Professional rezume tayyorlatish uchun tugmani bosing:"
-                        )
-                        
-                        full_caption = post_text + caption_footer
-                        
-                        keyboard = InlineKeyboardMarkup([
-                            [InlineKeyboardButton("📄 Rezume kerakmi?", url="https://t.me/rezyume_tayyorlasht_bot")]
-                        ])
-                        
-                        image_file = get_matching_image(post_text)
-                        
-                        if image_file and os.path.exists(image_file):
-                            with open(image_file, 'rb') as photo_file:
-                                await bot.send_photo(
-                                    chat_id=TARGET_CHANNEL,
-                                    photo=photo_file,
-                                    caption=full_caption,
-                                    reply_markup=keyboard
-                                )
-                        else:
-                            await bot.send_message(
+                    full_caption = post_text + caption_footer
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📄 Rezume kerakmi?", url="https://t.me/rezyume_tayyorlasht_bot")]
+                    ])
+                    
+                    image_file = get_matching_image(post_text)
+                    
+                    if image_file and os.path.exists(image_file):
+                        with open(image_file, 'rb') as photo_file:
+                            await bot.send_photo(
                                 chat_id=TARGET_CHANNEL,
-                                text=full_caption,
+                                photo=photo_file,
+                                caption=full_caption,
                                 reply_markup=keyboard
                             )
-                        
-                        print(f"Yangi post joylandi ({image_file} bilan): {post_identifier}")
-                        posted_ids.add(post_identifier)
-                        save_posted_ids(posted_ids)
-                        
-                        await asyncio.sleep(3)
-                        
-            except Exception as e:
-                print(f"{channel} kanalini o'qishda xatolik yuz berdi: {e}")
+                    else:
+                        await bot.send_message(
+                            chat_id=TARGET_CHANNEL,
+                            text=full_caption,
+                            reply_markup=keyboard
+                        )
+                    
+                    print(f"Yangi post joylandi ({image_file} bilan): {post_identifier}")
+                    posted_ids.add(post_identifier)
+                    save_posted_ids(posted_ids)
+                    
+                    await asyncio.sleep(3)
+                    
+        except Exception as e:
+            print(f"{channel} kanalini o'qishda xatolik yuz berdi: {e}")
+
+    await user_client.disconnect()
 
 if __name__ == "__main__":
     asyncio.run(main())
