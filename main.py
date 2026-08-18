@@ -9,7 +9,7 @@ API_ID = int(os.environ.get("TELEGRAM_API_ID"))
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL")
-SESSION_STRING = os.environ.get("TELEGRAM_SESSION")
+SESSION_STRING = os.environ.get("TELEGRAM_SESSION", "").strip()
 
 # Kuzatiladigan kanallar
 CHANNELS = [
@@ -21,14 +21,12 @@ CHANNELS = [
     "@vacancy_argos"
 ]
 
-# GitHub papkasidan mos rasmni topish
 def find_image_by_prefix(prefix):
     for filename in os.listdir("."):
         if filename.lower().startswith(prefix.lower()) and filename.lower().endswith(('.jpeg', '.jpg', '.png')):
             return filename
     return None
 
-# Post matniga qarab GitHub'dagi mos rasmni aniqlash
 def get_matching_image(text):
     text_lower = text.lower() if text else ""
     
@@ -60,35 +58,37 @@ def get_matching_image(text):
     return find_image_by_prefix("7")
 
 async def main():
-    # UserClient kanallarni o'qish uchun (yangilangan StringSession ishlatadi)
+    if not SESSION_STRING:
+        print("XATO: TELEGRAM_SESSION topilmadi! Secrets bo'limini tekshiring.")
+        return
+
+    # USER CLIENT — Kanallarni o'qish uchun akkauntingiz
     user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
-    # BotClient maqsadli kanalga postlarni yuborish uchun
+    # BOT CLIENT — Kanalingizga post va rasm joylash uchun bot
     bot_client = TelegramClient('bot_session', API_ID, API_HASH)
-    
+
+    # Akkaunt va Botni ulash
     await user_client.start()
     await bot_client.start(bot_token=BOT_TOKEN)
 
-    # 18-avgustdan boshlab va Undan keyingi BARCHA kunlar uchun cheklov
     start_date = datetime(2026, 8, 18, tzinfo=timezone.utc)
 
     for channel in CHANNELS:
         try:
+            # DIQQAT: iter_messages aynan user_client orqali ishlaydi
             async for message in user_client.iter_messages(channel, limit=15):
-                # Faqat 18-avgust va undan keyingi yangi postlar olinadi
                 if message.date >= start_date:
-                    # Kanaldagi rasmlar inobatga olinmaydi, faqat matn olinadi
                     post_text = message.text or message.caption or ""
                     
                     if post_text.strip():
                         github_image = get_matching_image(post_text)
                         
-                        # GitHub'dagi rasm bilan birga yuboriladi
                         if github_image and os.path.exists(github_image):
                             await bot_client.send_file(TARGET_CHANNEL, file=github_image, caption=post_text)
                         else:
                             await bot_client.send_message(TARGET_CHANNEL, post_text)
                         
-                        print(f"-> {channel} kanalidan post GitHub rasmi ({github_image}) bilan yuborildi!")
+                        print(f"-> {channel} kanalidan post muvaffaqiyatli jo'natildi!")
                         await asyncio.sleep(2)
         except Exception as e:
             print(f"{channel} xatosi: {e}")
