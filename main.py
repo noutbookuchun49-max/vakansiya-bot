@@ -3,12 +3,14 @@ import asyncio
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
+# Environment variables
 API_ID = int(os.environ.get("TELEGRAM_API_ID"))
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL")
 SESSION_STRING = os.environ.get("TELEGRAM_SESSION")
 
+# Kuzatiladigan kanallar
 CHANNELS = [
     "@iivuz",
     "@vakansyuz",
@@ -18,12 +20,14 @@ CHANNELS = [
     "@vacancy_argos"
 ]
 
+# GitHub papkasidan mos rasmni topish
 def find_image_by_prefix(prefix):
     for filename in os.listdir("."):
         if filename.lower().startswith(prefix.lower()) and filename.lower().endswith(('.jpeg', '.jpg', '.png')):
             return filename
     return None
 
+# Post matniga qarab GitHub'dagi mos rasmni tanlash
 def get_matching_image(text):
     text_lower = text.lower() if text else ""
     
@@ -55,7 +59,9 @@ def get_matching_image(text):
     return find_image_by_prefix("7")
 
 async def main():
+    # UserClient orqali kanallarni o'qiymiz
     user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+    # BotClient orqali target kanalga post joylaymiz
     bot_client = TelegramClient('bot_session', API_ID, API_HASH)
     
     await user_client.start()
@@ -63,21 +69,21 @@ async def main():
 
     for channel in CHANNELS:
         try:
-            # Limitni 50 ta qildik va sana cheklovini olib tashladik
-            async for message in user_client.iter_messages(channel, limit=50):
+            # MUHIM: Xabarlar user_client orqali o'qiladi!
+            async for message in user_client.iter_messages(channel, limit=10):
                 post_text = message.text or message.caption or ""
                 
                 if post_text.strip():
-                    github_image = get_matching_image(post_text)
+                    image_file = get_matching_image(post_text)
                     
-                    if github_image and os.path.exists(github_image):
-                        await bot_client.send_file(TARGET_CHANNEL, file=github_image, caption=post_text)
+                    if image_file and os.path.exists(image_file):
+                        await bot_client.send_file(TARGET_CHANNEL, file=image_file, caption=post_text)
                     else:
                         await bot_client.send_message(TARGET_CHANNEL, post_text)
-                    
-                    print(f"-> {channel} kanalidan xabar yuborildi!")
+                        
+                    print(f"-> {channel} kanalidan post joylandi!")
                     await asyncio.sleep(2)
-                    break # Har bir kanaldan eng oxirgi 1 ta mos xabarni yuboradi
+                    break 
         except Exception as e:
             print(f"{channel} xatosi: {e}")
 
