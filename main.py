@@ -1,5 +1,6 @@
 import os
 import asyncio
+from datetime import datetime, timezone
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
@@ -10,7 +11,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL")
 SESSION_STRING = os.environ.get("TELEGRAM_SESSION")
 
-# Kuzatish kerak bo'lgan kanallar
+# Kuzatiladigan kanallar
 CHANNELS = [
     "@iivuz",
     "@vakansyuz",
@@ -59,31 +60,36 @@ def get_matching_image(text):
     return find_image_by_prefix("7")
 
 async def main():
-    # UserClient — kanallarni o'qish uchun (Aynan shu ishlatilishi shart!)
+    # UserClient kanallarni o'qish uchun (yangilangan StringSession ishlatadi)
     user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
-    # BotClient — o'zingizning kanalingizga rasm va matnni yuborish uchun
+    # BotClient maqsadli kanalga postlarni yuborish uchun
     bot_client = TelegramClient('bot_session', API_ID, API_HASH)
     
     await user_client.start()
     await bot_client.start(bot_token=BOT_TOKEN)
 
+    # 18-avgustdan boshlab va Undan keyingi BARCHA kunlar uchun cheklov
+    start_date = datetime(2026, 8, 18, tzinfo=timezone.utc)
+
     for channel in CHANNELS:
         try:
-            # MUHIM: Xabar faqat USER_CLIENT orqali o'qiladi!
-            async for message in user_client.iter_messages(channel, limit=10):
-                post_text = message.text or message.caption or ""
-                
-                if post_text.strip():
-                    image_file = get_matching_image(post_text)
+            async for message in user_client.iter_messages(channel, limit=15):
+                # Faqat 18-avgust va undan keyingi yangi postlar olinadi
+                if message.date >= start_date:
+                    # Kanaldagi rasmlar inobatga olinmaydi, faqat matn olinadi
+                    post_text = message.text or message.caption or ""
                     
-                    if image_file and os.path.exists(image_file):
-                        await bot_client.send_file(TARGET_CHANNEL, file=image_file, caption=post_text)
-                    else:
-                        await bot_client.send_message(TARGET_CHANNEL, post_text)
+                    if post_text.strip():
+                        github_image = get_matching_image(post_text)
                         
-                    print(f"-> {channel} kanalidan post joylandi!")
-                    await asyncio.sleep(2)
-                    break 
+                        # GitHub'dagi rasm bilan birga yuboriladi
+                        if github_image and os.path.exists(github_image):
+                            await bot_client.send_file(TARGET_CHANNEL, file=github_image, caption=post_text)
+                        else:
+                            await bot_client.send_message(TARGET_CHANNEL, post_text)
+                        
+                        print(f"-> {channel} kanalidan post GitHub rasmi ({github_image}) bilan yuborildi!")
+                        await asyncio.sleep(2)
         except Exception as e:
             print(f"{channel} xatosi: {e}")
 
