@@ -5,14 +5,12 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 
-# Secret'lardan olinadigan ma'lumotlar
 API_ID = int(os.environ.get("TELEGRAM_API_ID"))
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
 SESSION_STRING = os.environ.get("TELEGRAM_SESSION")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL")
 
-# Kuzatiladigan kanallar ro'yxati (@ belgisi bilan)
 SOURCE_CHANNELS = [
     '@iivuz',
     '@vakansyuz',
@@ -24,8 +22,66 @@ SOURCE_CHANNELS = [
 
 DB_FILE = 'posted_ids.json'
 
+def get_matching_image(text):
+    """Matnga qarab repositoriyadagi mos rasm faylini topadi"""
+    txt = text.lower()
+    
+    all_files = os.listdir('.')
+    prefix = 'Office_worker_sitting_at'
+    
+    # 1. IIB / Politsiya
+    if any(k in txt for k in ['iib', 'iiv', 'militsiya', 'politsiya', 'patrul', 'tadbirlar', 'qo\'riqlash']):
+        prefix = 'Police_officer_standing_near'
+    # 2. Maktab / O'qituvchi
+    elif any(k in txt for k in ['o\'qituvchi', 'pedagog', 'maktab', 'dars', 'ta\'lim', 'tarbiyachi', 'repetitor']):
+        prefix = 'Teacher_explaining_lesson_at'
+    # 3. Shifokor / Hamshira
+    elif any(k in txt for k in ['shifokor', 'vrach', 'hamshira', 'tibbiyot', 'med', 'doktor', 'klinika', 'dorixona']):
+        prefix = 'Doctor_smiling_in_hospital_hallway'
+    # 4. IT / Dasturchi
+    elif any(k in txt for k in ['dasturchi', 'developer', 'python', 'php', 'frontend', 'backend', 'it ', 'kompyuter', 'smm', 'dizayner']):
+        prefix = 'Software_developer_coding_on'
+    # 5. Bank / Moliya
+    elif any(k in txt for k in ['bank', 'moliya', 'buxgalter', 'gaznachilik', 'kassa', 'kassir', 'kredit']):
+        prefix = 'Bank_employee_assisting_client'
+    # 6. Zavod / Ishlab chiqarish
+    elif any(k in txt for k in ['zavod', 'sekh', 'fabrika', 'ishlab chiqarish', 'stanok', 'sex', 'texnik']):
+        prefix = 'Worker_operating_manufacturing'
+    # 8. Huquq / Yurist
+    elif any(k in txt for k in ['yurist', 'advokat', 'sudya', 'huquq', 'notarius', 'yuriskonsult']):
+        prefix = 'Lawyer_standing_in_law_office'
+    # 9. Savdo / Sotuvchi
+    elif any(k in txt for k in ['sotuvchi', 'savdo', 'do\'kon', 'market', 'administrator', 'konsultant']):
+        prefix = 'Shop_seller_arranging_grocery'
+    # 10. Haydovchi / Logistika
+    elif any(k in txt for k in ['haydovchi', 'voditel', 'dostavka', 'yetkazib', 'taksi', 'moshina']):
+        prefix = 'Truck_driver_smiling_on_highway'
+    # 11. Oshpaz / Restoran
+    elif any(k in txt for k in ['oshpaz', 'povar', 'fastfood', 'oshxona', 'restoran', 'kafe', 'pitsa', 'ofitsiant']):
+        prefix = 'Chef_plating_dish_in_kitchen'
+    # 12. Qurilish
+    elif any(k in txt for k in ['qurilish', 'prorab', 'g\'isht', 'stroyka', 'payvandchi', 'svarchik', 'usta']):
+        prefix = 'Construction_worker_working_on'
+    # 13. Tozalash
+    elif any(k in txt for k in ['tozalash', 'uborka', 'klining', 'farrosh']):
+        prefix = 'Cleaner_cleaning_commercial'
+    # 14. Operator / Call-center
+    elif any(k in txt for k in ['operator', 'call-center', 'muloqot', 'qo\'ng\'iroq']):
+        prefix = 'Operator_working_on_computer'
+    # 15. Ombor
+    elif any(k in txt for k in ['ombor', 'sklad', 'gruzchik', 'yuklovchi']):
+        prefix = 'Worker_checking_inventory'
+
+    # Papkadan mos rasm nomini topish
+    for f in all_files:
+        if f.startswith(prefix):
+            return f
+            
+    if os.path.exists('7.jpg'):
+        return '7.jpg'
+    return None
+
 def load_posted_ids():
-    """Ilgari joylangan post ID'larini fayldan o'qish"""
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, 'r', encoding='utf-8') as f:
@@ -36,7 +92,6 @@ def load_posted_ids():
     return set()
 
 def save_posted_ids(posted_ids):
-    """Joylangan post ID'larini faylga saqlash"""
     try:
         with open(DB_FILE, 'w', encoding='utf-8') as f:
             json.dump(list(posted_ids), f, ensure_ascii=False, indent=2)
@@ -47,24 +102,18 @@ async def main():
     posted_ids = load_posted_ids()
     bot = Bot(token=BOT_TOKEN)
     
-    # Telegram Userbot mijozini ishga tushirish
     async with TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH) as client:
         for channel in SOURCE_CHANNELS:
             try:
                 print(f"Kanal tekshirilmoqda: {channel}")
-                # Har bir kanaldan oxirgi 5 ta postni olish
-                messages = await client.get_messages(channel, limit=5)
+                messages = await client.get_messages(channel, limit=30)
                 
                 for msg in reversed(messages):
                     post_identifier = f"{channel}_{msg.id}"
+                    post_text = msg.text or msg.caption
                     
-                    # Agar ushbu post ilgari joylanmagan bo'lsa va matni bo'lsa
-                    if post_identifier not in posted_ids and msg.text:
+                    if post_identifier not in posted_ids and post_text:
                         
-                        # Matnni tayyorlash
-                        post_text = msg.text
-                        
-                        # Pastki qismdagi tugma va reklama matni
                         caption_footer = (
                             "\n\n— — — — — — — — — — — — — — — —\n"
                             "Ko'pchilik ish izlayotganlar **\"Oddiy ma'lumotnoma bo'lsa bo'ldiku\"** "
@@ -80,38 +129,32 @@ async def main():
                         
                         full_caption = post_text + caption_footer
                         
-                        # Inline tugma yaratish
                         keyboard = InlineKeyboardMarkup([
                             [InlineKeyboardButton("📄 Rezume kerakmi?", url="https://t.me/rezyume_tayyorlasht_bot")]
                         ])
                         
-                        # Postni kanalga yuborish
-                        if msg.photo:
-                            photo_path = await msg.download_media()
-                            with open(photo_path, 'rb') as photo_file:
+                        image_file = get_matching_image(post_text)
+                        
+                        if image_file and os.path.exists(image_file):
+                            with open(image_file, 'rb') as photo_file:
                                 await bot.send_photo(
                                     chat_id=TARGET_CHANNEL,
                                     photo=photo_file,
                                     caption=full_caption,
-                                    parse_mode='Markdown',
                                     reply_markup=keyboard
                                 )
-                            if os.path.exists(photo_path):
-                                os.remove(photo_path)
                         else:
                             await bot.send_message(
                                 chat_id=TARGET_CHANNEL,
                                 text=full_caption,
-                                parse_mode='Markdown',
                                 reply_markup=keyboard
                             )
                         
-                        print(f"Yangi post joylandi: {post_identifier}")
+                        print(f"Yangi post joylandi ({image_file} bilan): {post_identifier}")
                         posted_ids.add(post_identifier)
                         save_posted_ids(posted_ids)
                         
-                        # Kanalga birdaniga spam bo'lmasligi uchun 5 soniya kutish
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(3)
                         
             except Exception as e:
                 print(f"{channel} kanalini o'qishda xatolik yuz berdi: {e}")
