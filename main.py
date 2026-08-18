@@ -9,14 +9,14 @@ API_HASH = os.environ.get("TELEGRAM_API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL")
 
-# Base64 padding xatosini to'g'rilash
+# Base64 padding xatosini oldini olish
 raw_session = os.environ.get("TELEGRAM_SESSION", "").strip()
 missing_padding = len(raw_session) % 4
 if missing_padding:
     raw_session += '=' * (4 - missing_padding)
 SESSION_STRING = raw_session
 
-# Kuzatiladigan kanallar ro'yxati
+# Kuzatish kerak bo'lgan kanallar
 CHANNELS = [
     "@iivuz",
     "@vakansyuz",
@@ -27,30 +27,27 @@ CHANNELS = [
 ]
 
 async def main():
-    # User Client yaratamiz (Kanallarni o'qish uchun)
+    # User Client — kanallardan postlarni O'QISH uchun
     user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
     
-    # Bot Client yaratamiz (Xabarlarni yuborish uchun)
+    # Bot Client — o'zingizning kanalingizga YUBORISH uchun
     bot_client = TelegramClient('bot_session', API_ID, API_HASH)
     
     await user_client.start()
     await bot_client.start(bot_token=BOT_TOKEN)
     
-    print("Bot va User client muvaffaqiyatli ishga tushdi.")
+    print("Clientlar muvaffaqiyatli ishga tushdi.")
 
     for channel in CHANNELS:
         print(f"Kanal tekshirilmoqda: {channel}")
         try:
-            # UMUMLASHTIRILGAN YECHIM: Postlarni bot emas, USER CLIENT o'qiydi
-            async for message in user_client.iter_messages(channel, limit=5):
+            # POSTLARNI USER CLIENT O'QIYDI (xatolik bermaydi)
+            async for message in user_client.iter_messages(channel, limit=3):
                 if message.text:
-                    # Bu yerda yangi postlarni filter qilish mantiqini qo'shishingiz mumkin
-                    
-                    # Target kanalga xabarni BOT yuboradi
-                    # (yoki user_client.send_message ishlatsa ham bo'ladi)
+                    # Target kanalga BOT yuboradi
                     await bot_client.send_message(TARGET_CHANNEL, message.text)
-                    print(f"-> {channel} kanalidan yangi post yuborildi!")
-                    break # Sinov uchun har bir kanaldan 1 ta oxirgi postni oladi
+                    print(f"-> {channel} kanalidan post yuborildi!")
+                    break 
         except Exception as e:
             print(f"{channel} kanalini o'qishda xatolik yuz berdi: {e}")
 
