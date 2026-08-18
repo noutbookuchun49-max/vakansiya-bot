@@ -1,0 +1,41 @@
+name: Hourly Vacancy Fetcher
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Har soatda avtomatik ishga tushadi
+  workflow_dispatch:      # Qo'lda ham ishga tushirish tugmasi
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Bot Script
+      env:
+        TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+        TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
+        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        TARGET_CHANNEL: ${{ secrets.TARGET_CHANNEL }}
+      run: python main.py
+
+    - name: Commit and Push DB Changes
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git add posted_ids.json
+        git commit -m "Update posted IDs DB" || exit 0
+        git push
