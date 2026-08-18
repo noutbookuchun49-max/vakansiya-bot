@@ -10,7 +10,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL")
 SESSION_STRING = os.environ.get("TELEGRAM_SESSION")
 
-# Kuzatiladigan kanallar
+# Kuzatish kerak bo'lgan kanallar
 CHANNELS = [
     "@iivuz",
     "@vakansyuz",
@@ -27,7 +27,7 @@ def find_image_by_prefix(prefix):
             return filename
     return None
 
-# Post matniga qarab GitHub'dagi mos rasmni tanlash
+# Post matniga qarab GitHub'dagi mos rasmni aniqlash
 def get_matching_image(text):
     text_lower = text.lower() if text else ""
     
@@ -59,9 +59,9 @@ def get_matching_image(text):
     return find_image_by_prefix("7")
 
 async def main():
-    # UserClient orqali kanallarni o'qiymiz
+    # UserClient — kanallarni o'qish uchun (Aynan shu ishlatilishi shart!)
     user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
-    # BotClient orqali target kanalga post joylaymiz
+    # BotClient — o'zingizning kanalingizga rasm va matnni yuborish uchun
     bot_client = TelegramClient('bot_session', API_ID, API_HASH)
     
     await user_client.start()
@@ -69,7 +69,7 @@ async def main():
 
     for channel in CHANNELS:
         try:
-            # MUHIM: Xabarlar user_client orqali o'qiladi!
+            # MUHIM: Xabar faqat USER_CLIENT orqali o'qiladi!
             async for message in user_client.iter_messages(channel, limit=10):
                 post_text = message.text or message.caption or ""
                 
