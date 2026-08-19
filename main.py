@@ -23,14 +23,14 @@ if missing_env:
 
 API_ID = int(API_ID_RAW)
 
-# Kuzatiladigan kanallar
+# Kuzatiladigan kanallar (ID raqamlari orqali)
 CHANNELS = [
-    "iivuz",
-    "vakansyuz",
-    "mahalladosh_tv",
-    "militsiya_102",
-    "militsiya_live",
-    "vacancy_argos"
+    -1001121935460, # @iivuz
+    -1002887232365, # @vakansyuz
+    -1002362638976, # @mahalladosh_tv
+    -1001565245426, # @militsiya_102
+    -1001796150117, # @militsiya_live
+    -1001316196272  # @vacancy_argos
 ]
 
 def find_image_by_prefix(prefix):
@@ -86,11 +86,10 @@ async def main():
     start_date = datetime(2026, 8, 18, tzinfo=timezone.utc)
 
     for ch in CHANNELS:
-        username = f"@{ch}" if not ch.startswith("@") else ch
-        print(f"\n--- Kanal tekshirilmoqda: {username} ---")
+        print(f"\n--- Kanal tekshirilmoqda: {ch} ---")
         
         try:
-            entity = await client.get_entity(username)
+            entity = await client.get_entity(ch)
             count = 0
             
             async for message in client.iter_messages(entity, limit=15):
@@ -106,13 +105,13 @@ async def main():
                             await client.send_message(TARGET_CHANNEL, post_text)
                             
                         count += 1
-                        print(f"-> {username} kanalidan post joylandi. Rasm: {github_image}")
+                        print(f"-> {ch} kanalidan post joylandi. Rasm: {github_image}")
                         await asyncio.sleep(2)
                         
-            print(f"Xulosa: {username} kanalidan {count} ta post olindi.")
+            print(f"Xulosa: {ch} kanalidan {count} ta post olindi.")
 
         except Exception as e:
-            print(f"XATO [{username}]: {type(e).__name__} - {e}")
+            print(f"XATO [{ch}]: {type(e).__name__} - {e}")
 
     await client.disconnect()
     print("\nJarayon yakunlandi va client uzildi.")
