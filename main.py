@@ -1,11 +1,13 @@
 import os
 import sys
 import asyncio
+import traceback
 from datetime import datetime, timezone
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+from telethon.errors import FloodWaitError
 
-# Environment variables va ularning mavjudligini tekshirish
+# 1. Environment variables tekshiruvi
 API_ID_RAW = os.environ.get("TELEGRAM_API_ID")
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL")
@@ -23,14 +25,14 @@ if missing_env:
 
 API_ID = int(API_ID_RAW)
 
-# Kuzatiladigan kanallar (ID raqamlari orqali)
+# Kuzatiladigan kanallar (Username yoki ID bo'lishi mumkin)
 CHANNELS = [
-    -1001121935460, # @iivuz
-    -1002887232365, # @vakansyuz
-    -1002362638976, # @mahalladosh_tv
-    -1001565245426, # @militsiya_102
-    -1001796150117, # @militsiya_live
-    -1001316196272  # @vacancy_argos
+    "iivuz",
+    "vakansyuz",
+    "mahalladosh_tv",
+    "militsiya_102",
+    "militsiya_live",
+    "vacancy_argos"
 ]
 
 def find_image_by_prefix(prefix):
@@ -67,10 +69,49 @@ def get_matching_image(text):
         return find_image_by_prefix("Operator_working")
     return find_image_by_prefix("7")
 
-# Message matnini xavfsiz olish funksiyasi
 def extract_message_text(message) -> str:
     text = getattr(message, 'message', None) or getattr(message, 'text', None) or getattr(message, 'caption', None) or ""
     return str(text).strip()
+
+async def resolve_entity(client, identifier):
+    """ Entity'ni topish uchun bir necha usul bilan urinish """
+    # 1. Asl ko'rinishida urinish
+    try:
+        return await client.get_entity(identifier)
+    except Exception:
+        pass
+
+    # 2. Agar @ yo'q bo'lsa, @ qo'shib urinish
+    if isinstance(identifier, str) and not identifier.startswith("@"):
+        try:
+            return await client.get_entity(f"@{identifier}")
+        except Exception:
+            pass
+
+    # 3. Dialoglar orasidan qidirish (keshni yangilaydi)
+    async for dialog in client.iter_dialogs(limit=100):
+        if str(dialog.id) == str(identifier) or dialog.name == identifier or getattr(dialog.entity, 'username', None) == str(identifier).replace("@", ""):
+            return dialog.entity
+
+    raise ValueError(f"Entity topilmadi: {identifier!r}")
+
+async def send_with_retry(client, target, file=None, caption=None, text=None, message_to_forward=None):
+    """ FloodWaitError holatida avtomatik kutib qayta yuborish """
+    while True:
+        try:
+            if message_to_forward:
+                await client.forward_messages(target, message_to_forward)
+            elif file:
+                await client.send_file(target, file=file, caption=caption)
+            elif text:
+                await client.send_message(target, text)
+            break
+        except FloodWaitError as e:
+            print(f" FloodWait kutilmoqda: {e.seconds} soniya...")
+            await asyncio.sleep(e.seconds + 1)
+        except Exception as e:
+            print(f" Yuborishda xatolik: {e}")
+            break
 
 async def main():
     print("Telegram client ishga tushmoqda...")
@@ -78,18 +119,18 @@ async def main():
     
     try:
         await client.start()
-        print("Telegram klient muvaffaqiyatli ulandi.")
+        me = await client.get_me()
+        print(f"Telegram klient ulandi: {me.first_name} (id={me.id}, @{me.username})")
     except Exception as e:
-        print(f"CRITICAL XATO: Telegram klientga ulanib bo'lmadi! Details: {type(e).__name__}: {e}")
+        print(f"CRITICAL XATO: Ulanishda xatolik: {e}")
         return
 
     start_date = datetime(2026, 8, 18, tzinfo=timezone.utc)
 
     for ch in CHANNELS:
-        print(f"\n--- Kanal tekshirilmoqda: {ch} ---")
-        
+        print(f"\n--- Kanal tekshirilmoqda: {ch!r} ---")
         try:
-            entity = await client.get_entity(ch)
+            entity = await resolve_entity(client, ch)
             count = 0
             
             async for message in client.iter_messages(entity, limit=15):
@@ -98,20 +139,25 @@ async def main():
                     
                     if post_text:
                         github_image = get_matching_image(post_text)
-                        
                         if github_image and os.path.exists(github_image):
-                            await client.send_file(TARGET_CHANNEL, file=github_image, caption=post_text)
+                            await send_with_retry(client, TARGET_CHANNEL, file=github_image, caption=post_text)
                         else:
-                            await client.send_message(TARGET_CHANNEL, post_text)
-                            
+                            await send_with_retry(client, TARGET_CHANNEL, text=post_text)
                         count += 1
                         print(f"-> {ch} kanalidan post joylandi. Rasm: {github_image}")
-                        await asyncio.sleep(2)
+                    elif message.media:
+                        # Matnsiz media bo'lsa forward qilish
+                        await send_with_retry(client, TARGET_CHANNEL, message_to_forward=message)
+                        count += 1
+                        print(f"-> {ch} kanalidan media forward qilindi.")
+
+                    await asyncio.sleep(2)
                         
             print(f"Xulosa: {ch} kanalidan {count} ta post olindi.")
 
         except Exception as e:
-            print(f"XATO [{ch}]: {type(e).__name__} - {e}")
+            print(f"XATO [{ch!r}]: {type(e).__name__} - {e}")
+            traceback.print_exc()
 
     await client.disconnect()
     print("\nJarayon yakunlandi va client uzildi.")
