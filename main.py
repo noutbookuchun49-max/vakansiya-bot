@@ -8,6 +8,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
 from telethon.tl.custom import Button
+from telethon.tl.types import MessageEntityTextUrl
 
 # ============================================================
 # 1. ENVIRONMENT VARIABLES
@@ -228,8 +229,49 @@ def extract_application_link(message):
     return None
 
 
+def _utf16_slice(text: str, offset: int, length: int) -> str:
+    """Telegram entity offset/length UTF-16 birliklarida bo'lgani uchun
+    matndan xavfsiz (emoji va boshqa maxsus belgilarni hisobga olib) kesib oladi."""
+    raw = text.encode("utf-16-le")
+    start = offset * 2
+    end = start + length * 2
+    return raw[start:end].decode("utf-16-le", errors="ignore")
+
+
+def extract_hidden_text_link(message):
+    """Matn ichida yashiringan hyperlink'larni topadi
+    (masalan 'Batafsil' so'zi bosilganda ochiladigan, lekin oddiy matnda ko'rinmaydigan link)."""
+    text = extract_message_text(message)
+    entities = getattr(message, "entities", None)
+    if not entities or not text:
+        return None
+
+    candidates = []
+    for ent in entities:
+        if isinstance(ent, MessageEntityTextUrl):
+            label = _utf16_slice(text, ent.offset, ent.length).lower()
+            candidates.append((label, ent.url))
+
+    if not candidates:
+        return None
+
+    # 1) Kalit so'zga mos label'li linkni qidirish
+    for label, url in candidates:
+        if any(k in label for k in APPLY_LINK_KEYWORDS):
+            return url
+
+    # 2) Agar faqat bitta yashirin link bo'lsa, o'shani qaytarish
+    if len(candidates) == 1:
+        return candidates[0][1]
+
+    # 3) Bir nechta yashirin link bo'lsa ham, birinchisini olish
+    #    (manba kanalda odatda faqat ariza linki shu tarzda joylashtiriladi)
+    return candidates[0][1]
+
+
 def extract_link_from_text(text: str):
-    """Tugma bo'lmasa, matn ichidan 'batafsil/ariza' so'zi yonidagi linkni qidiradi."""
+    """Tugma va yashirin hyperlink bo'lmasa, matn ichidan
+    'batafsil/ariza' so'zi yonidagi oddiy ko'rinadigan linkni qidiradi."""
     if not text:
         return None
     for line in text.split("\n"):
@@ -238,7 +280,21 @@ def extract_link_from_text(text: str):
             m = URL_RE.search(line)
             if m:
                 return m.group(0)
+    # Agar kalit so'z topilmasa ham, matnda bitta link bo'lsa o'shani olish
+    all_links = URL_RE.findall(text)
+    if len(all_links) == 1:
+        return all_links[0]
     return None
+
+
+def extract_any_link(message, post_text):
+    """Barcha usullarni ketma-ket sinab, topilgan birinchi linkni qaytaradi:
+    1) Inline tugma  2) Yashirin matn ichidagi hyperlink  3) Oddiy ko'rinadigan link"""
+    return (
+        extract_application_link(message)
+        or extract_hidden_text_link(message)
+        or extract_link_from_text(post_text)
+    )
 
 
 # ============================================================
@@ -351,12 +407,13 @@ async def main():
 
                 final_caption = build_vacancy_post(post_text)
                 image_path = get_matching_image(post_text, ch)
-                apply_link = extract_application_link(message) or extract_link_from_text(post_text)
+                apply_link = extract_any_link(message, post_text)
 
                 ok = await send_vacancy_post(bot_client, TARGET_CHANNEL, final_caption, image_path, apply_link)
                 if ok:
                     posted_count += 1
-                    print(f"  -> Vakansiya joylandi (msg_id={message.id})")
+                    link_info = "link bilan" if apply_link else "LINKSIZ"
+                    print(f"  -> Vakansiya joylandi (msg_id={message.id}, {link_info})")
 
                 await asyncio.sleep(2)
 
