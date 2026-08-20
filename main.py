@@ -51,9 +51,10 @@ MAX_TEXT_LEN = 4096      # Telegram matn xabari uchun limit
 
 RESUME_LINK = "https://t.me/rezumekerakmi"
 
-# Shu sanadan OLDINGI postlar butunlay o'tkazib yuboriladi (UTC bo'yicha).
-# Telegram xabarlarining message.date qiymati doim UTC bo'ladi.
-CUTOFF_DATE = datetime(2026, 8, 21, 0, 0, 0, tzinfo=timezone.utc)
+# Shu sanadan OLDINGI postlar butunlay o'tkazib yuboriladi.
+# Toshkent vaqti (UTC+5) bo'yicha 21-avgust 00:00 ga to'g'ri keladigan
+# UTC vaqt hisoblab qo'yilgan: 21-avgust 00:00 (Toshkent) = 20-avgust 19:00 (UTC)
+CUTOFF_DATE = datetime(2026, 8, 20, 19, 0, 0, tzinfo=timezone.utc)
 
 
 # ============================================================
@@ -170,7 +171,7 @@ NOISE_LINE_PATTERNS = [
 ]
 
 
-def clean_source_text(text: str) -> str:
+def clean_source_text(text: str, keep_url: str = None) -> str:
     lines = text.split("\n")
     cleaned_lines = []
     for line in lines:
@@ -178,7 +179,11 @@ def clean_source_text(text: str) -> str:
         if any(p in low for p in NOISE_LINE_PATTERNS):
             continue
         line = MENTION_RE.sub("", line)
-        line = URL_RE.sub("", line)
+        if keep_url:
+            # Faqat ariza/link linkini saqlab qolib, qolgan (reklama) linklarni tozalash
+            line = URL_RE.sub(lambda m: m.group(0) if m.group(0) == keep_url else "", line)
+        else:
+            line = URL_RE.sub("", line)
         cleaned_lines.append(line.strip())
     return "\n".join(l for l in cleaned_lines if l)
 
@@ -209,32 +214,6 @@ APPLY_LINK_KEYWORDS = [
 ]
 
 
-def extract_application_link(message):
-    """Postdagi inline tugmalar orasidan URL tugmani topadi.
-    Avval 'batafsil/ariza' kabi so'zga mos tugmani qidiradi, topilmasa
-    postdagi BIRINCHI URL-tugmani qaytaradi (manba kanalda odatda
-    faqat bitta 'ariza yuborish' tugmasi bo'ladi)."""
-    try:
-        if message.buttons:
-            url_buttons = [
-                (getattr(btn, "text", "") or "", getattr(btn, "url", None))
-                for row in message.buttons
-                for btn in row
-                if getattr(btn, "url", None)
-            ]
-            if not url_buttons:
-                return None
-            # 1) Kalit so'zga mos label'li tugmani qidirish
-            for label, url in url_buttons:
-                if any(k in label.lower() for k in APPLY_LINK_KEYWORDS):
-                    return url
-            # 2) Mos kelmasa ham, birinchi URL-tugmani olish
-            return url_buttons[0][1]
-    except Exception:
-        pass
-    return None
-
-
 def _utf16_slice(text: str, offset: int, length: int) -> str:
     """Telegram entity offset/length UTF-16 birliklarida bo'lgani uchun
     matndan xavfsiz (emoji va boshqa maxsus belgilarni hisobga olib) kesib oladi."""
@@ -244,79 +223,86 @@ def _utf16_slice(text: str, offset: int, length: int) -> str:
     return raw[start:end].decode("utf-16-le", errors="ignore")
 
 
-def extract_hidden_text_link(message):
-    """Matn ichida yashiringan hyperlink'larni topadi
-    (masalan 'Batafsil' so'zi bosilganda ochiladigan, lekin oddiy matnda ko'rinmaydigan link)."""
-    text = extract_message_text(message)
+def extract_apply_link(message, text):
+    """Ariza/batafsil linkini topadi va u QANDAY shaklda joylashganini ham qaytaradi:
+    - source='button' -> manba postda alohida tugma bo'lgan (label bilan)
+    - source='hidden' -> matn ichida yashiringan hyperlink bo'lgan (masalan 'Batafsil' so'zi ostida)
+    - source='text'   -> matnda ochiq https://... ko'rinishida yozilgan
+    Natija: {'url':..., 'label':..., 'source':...} yoki None (link topilmasa)."""
+
+    # 1) Inline tugma
+    try:
+        if message.buttons:
+            url_buttons = [
+                ((getattr(btn, "text", "") or "").strip(), getattr(btn, "url", None))
+                for row in message.buttons
+                for btn in row
+                if getattr(btn, "url", None)
+            ]
+            if url_buttons:
+                for label, url in url_buttons:
+                    if any(k in label.lower() for k in APPLY_LINK_KEYWORDS):
+                        return {"url": url, "label": label, "source": "button"}
+                label, url = url_buttons[0]
+                return {"url": url, "label": label, "source": "button"}
+    except Exception:
+        pass
+
+    # 2) Matn ichidagi yashirin hyperlink (masalan "Batafsil" so'zi bosilganda ochiladigan)
     entities = getattr(message, "entities", None)
-    if not entities or not text:
-        return None
+    if entities and text:
+        candidates = []
+        for ent in entities:
+            if isinstance(ent, MessageEntityTextUrl):
+                label = _utf16_slice(text, ent.offset, ent.length).strip()
+                candidates.append((label, ent.url))
+        if candidates:
+            for label, url in candidates:
+                if any(k in label.lower() for k in APPLY_LINK_KEYWORDS):
+                    return {"url": url, "label": label, "source": "hidden"}
+            label, url = candidates[0]
+            return {"url": url, "label": label, "source": "hidden"}
 
-    candidates = []
-    for ent in entities:
-        if isinstance(ent, MessageEntityTextUrl):
-            label = _utf16_slice(text, ent.offset, ent.length).lower()
-            candidates.append((label, ent.url))
+    # 3) Matnda ochiq ko'rinadigan https://... link
+    if text:
+        for line in text.split("\n"):
+            low = line.lower()
+            if any(k in low for k in APPLY_LINK_KEYWORDS):
+                m = URL_RE.search(line)
+                if m:
+                    return {"url": m.group(0), "label": None, "source": "text"}
+        all_links = URL_RE.findall(text)
+        if all_links:
+            return {"url": all_links[0], "label": None, "source": "text"}
 
-    if not candidates:
-        return None
-
-    # 1) Kalit so'zga mos label'li linkni qidirish
-    for label, url in candidates:
-        if any(k in label for k in APPLY_LINK_KEYWORDS):
-            return url
-
-    # 2) Agar faqat bitta yashirin link bo'lsa, o'shani qaytarish
-    if len(candidates) == 1:
-        return candidates[0][1]
-
-    # 3) Bir nechta yashirin link bo'lsa ham, birinchisini olish
-    #    (manba kanalda odatda faqat ariza linki shu tarzda joylashtiriladi)
-    return candidates[0][1]
-
-
-def extract_link_from_text(text: str):
-    """Tugma va yashirin hyperlink bo'lmasa, matn ichidan
-    'batafsil/ariza' so'zi yonidagi oddiy ko'rinadigan linkni qidiradi."""
-    if not text:
-        return None
-    for line in text.split("\n"):
-        low = line.lower()
-        if any(k in low for k in APPLY_LINK_KEYWORDS):
-            m = URL_RE.search(line)
-            if m:
-                return m.group(0)
-    # Agar kalit so'z topilmasa ham, matnda link(lar) bo'lsa birinchisini olish
-    all_links = URL_RE.findall(text)
-    if all_links:
-        return all_links[0]
     return None
-
-
-def extract_any_link(message, post_text):
-    """Barcha usullarni ketma-ket sinab, topilgan birinchi linkni qaytaradi:
-    1) Inline tugma  2) Yashirin matn ichidagi hyperlink  3) Oddiy ko'rinadigan link"""
-    return (
-        extract_application_link(message)
-        or extract_hidden_text_link(message)
-        or extract_link_from_text(post_text)
-    )
 
 
 # ============================================================
 # 9. YAKUNIY POST SHABLONINI QURISH (oddiy qolip)
 # ============================================================
-def build_vacancy_post(raw_text: str) -> str:
-    cleaned = clean_source_text(raw_text)
+def build_vacancy_post(raw_text: str, apply_info=None) -> str:
+    # 'text' turidagi link matnda ochiq https://... shaklida bo'lgani uchun
+    # uni tozalashda saqlab qolamiz (reklama linklari esa baribir tozalanadi)
+    keep_url = apply_info["url"] if apply_info and apply_info["source"] == "text" else None
+    cleaned = clean_source_text(raw_text, keep_url=keep_url)
     region = detect_region(cleaned)
 
     header = "📢 YANGI DAVLAT VAKANSIYASI"
     region_line = f"\n📍 VILOYAT: {region}" if region else ""
 
+    # 'hidden' turidagi link (matn ichidagi yashirin hyperlink) uchun
+    # xuddi manbadagidek, matn ichida bosiladigan havola qilib qo'shamiz
+    link_line = ""
+    if apply_info and apply_info["source"] == "hidden":
+        label = apply_info["label"] or "Batafsil"
+        link_line = f"\n\n🔗 [{label}]({apply_info['url']})"
+
     post = (
         f"{header}"
         f"{region_line}\n\n"
-        f"{cleaned}\n\n"
+        f"{cleaned}"
+        f"{link_line}\n\n"
         f"Rezyume tayyorlashda sizga yordam beramiz 👇\n"
         f"👉 {RESUME_LINK.replace('https://t.me/', '@')}\n"
         f"🔔 Yangi davlat vakansiyalarini o'tkazib yubormang!\n"
@@ -335,10 +321,13 @@ def trim_caption(text: str, limit: int) -> str:
 # ============================================================
 # 10. YUBORISH (FloodWait bilan, tugma bilan, forward EMAS)
 # ============================================================
-async def send_vacancy_post(bot_client, target, caption, image_path, apply_link=None):
+async def send_vacancy_post(bot_client, target, caption, image_path, apply_button=None):
     buttons = []
-    if apply_link:
-        buttons.append(Button.url("📝 BATAFSIL / ARIZA YUBORISH", apply_link))
+    if apply_button:
+        # Manba postdagi ASL tugma matnini ishlatamiz (o'zimizniki emas)
+        label = (apply_button.get("label") or "Ariza yuborish").strip() or "Ariza yuborish"
+        button_text = f"📝 {label}"[:64]
+        buttons.append(Button.url(button_text, apply_button["url"]))
     buttons.append(Button.url("📄 REZYUME KERAKMI?", RESUME_LINK))
     while True:
         try:
@@ -348,12 +337,14 @@ async def send_vacancy_post(bot_client, target, caption, image_path, apply_link=
                     file=image_path,
                     caption=trim_caption(caption, MAX_CAPTION_LEN),
                     buttons=buttons,
+                    parse_mode='md',
                 )
             else:
                 await bot_client.send_message(
                     target,
                     trim_caption(caption, MAX_TEXT_LEN),
                     buttons=buttons,
+                    parse_mode='md',
                 )
             return True
         except FloodWaitError as e:
@@ -416,14 +407,16 @@ async def main():
                     skipped_ad += 1
                     continue
 
-                final_caption = build_vacancy_post(post_text)
-                image_path = get_matching_image(post_text, ch)
-                apply_link = extract_any_link(message, post_text)
+                apply_info = extract_apply_link(message, post_text)
+                apply_button = apply_info if apply_info and apply_info["source"] == "button" else None
 
-                ok = await send_vacancy_post(bot_client, TARGET_CHANNEL, final_caption, image_path, apply_link)
+                final_caption = build_vacancy_post(post_text, apply_info)
+                image_path = get_matching_image(post_text, ch)
+
+                ok = await send_vacancy_post(bot_client, TARGET_CHANNEL, final_caption, image_path, apply_button)
                 if ok:
                     posted_count += 1
-                    link_info = "link bilan" if apply_link else "LINKSIZ"
+                    link_info = f"link bilan ({apply_info['source']})" if apply_info else "LINKSIZ"
                     print(f"  -> Vakansiya joylandi (msg_id={message.id}, {link_info})")
 
                 await asyncio.sleep(2)
