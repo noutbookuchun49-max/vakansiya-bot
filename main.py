@@ -195,6 +195,53 @@ def detect_region(text: str):
 
 
 # ============================================================
+# 8.5 ARIZA / BATAFSIL LINKINI TOPISH
+# ============================================================
+APPLY_LINK_KEYWORDS = [
+    "batafsil", "ariza yuborish", "ariza topshirish", "to'liq ma'lumot",
+    "murojaat", "yuborish uchun", "topshirish uchun", "havola", "link",
+]
+
+
+def extract_application_link(message):
+    """Postdagi inline tugmalar orasidan 'batafsil/ariza' kabi so'zga mos URL tugmani topadi."""
+    try:
+        if message.buttons:
+            # 1) Kalit so'zga mos tugmani qidirish
+            for row in message.buttons:
+                for btn in row:
+                    url = getattr(btn, "url", None)
+                    label = (getattr(btn, "text", "") or "").lower()
+                    if url and any(k in label for k in APPLY_LINK_KEYWORDS):
+                        return url
+            # 2) Agar faqat bitta URL-tugma bo'lsa, o'shani olish
+            url_buttons = [
+                getattr(btn, "url", None)
+                for row in message.buttons
+                for btn in row
+                if getattr(btn, "url", None)
+            ]
+            if len(url_buttons) == 1:
+                return url_buttons[0]
+    except Exception:
+        pass
+    return None
+
+
+def extract_link_from_text(text: str):
+    """Tugma bo'lmasa, matn ichidan 'batafsil/ariza' so'zi yonidagi linkni qidiradi."""
+    if not text:
+        return None
+    for line in text.split("\n"):
+        low = line.lower()
+        if any(k in low for k in APPLY_LINK_KEYWORDS):
+            m = URL_RE.search(line)
+            if m:
+                return m.group(0)
+    return None
+
+
+# ============================================================
 # 9. YAKUNIY POST SHABLONINI QURISH (oddiy qolip)
 # ============================================================
 def build_vacancy_post(raw_text: str) -> str:
@@ -226,8 +273,11 @@ def trim_caption(text: str, limit: int) -> str:
 # ============================================================
 # 10. YUBORISH (FloodWait bilan, tugma bilan, forward EMAS)
 # ============================================================
-async def send_vacancy_post(bot_client, target, caption, image_path):
-    buttons = [Button.url("📄 REZYUME KERAKMI?", RESUME_LINK)]
+async def send_vacancy_post(bot_client, target, caption, image_path, apply_link=None):
+    buttons = []
+    if apply_link:
+        buttons.append(Button.url("📝 BATAFSIL / ARIZA YUBORISH", apply_link))
+    buttons.append(Button.url("📄 REZYUME KERAKMI?", RESUME_LINK))
     while True:
         try:
             if image_path and os.path.exists(image_path):
@@ -301,8 +351,9 @@ async def main():
 
                 final_caption = build_vacancy_post(post_text)
                 image_path = get_matching_image(post_text, ch)
+                apply_link = extract_application_link(message) or extract_link_from_text(post_text)
 
-                ok = await send_vacancy_post(bot_client, TARGET_CHANNEL, final_caption, image_path)
+                ok = await send_vacancy_post(bot_client, TARGET_CHANNEL, final_caption, image_path, apply_link)
                 if ok:
                     posted_count += 1
                     print(f"  -> Vakansiya joylandi (msg_id={message.id})")
