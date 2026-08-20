@@ -4,6 +4,7 @@ import sys
 import json
 import asyncio
 import traceback
+from datetime import datetime, timezone
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
@@ -49,6 +50,10 @@ MAX_CAPTION_LEN = 1024   # Telegram rasm captioni uchun limit
 MAX_TEXT_LEN = 4096      # Telegram matn xabari uchun limit
 
 RESUME_LINK = "https://t.me/rezumekerakmi"
+
+# Shu sanadan OLDINGI postlar butunlay o'tkazib yuboriladi (UTC bo'yicha).
+# Telegram xabarlarining message.date qiymati doim UTC bo'ladi.
+CUTOFF_DATE = datetime(2026, 8, 21, 0, 0, 0, tzinfo=timezone.utc)
 
 
 # ============================================================
@@ -205,25 +210,26 @@ APPLY_LINK_KEYWORDS = [
 
 
 def extract_application_link(message):
-    """Postdagi inline tugmalar orasidan 'batafsil/ariza' kabi so'zga mos URL tugmani topadi."""
+    """Postdagi inline tugmalar orasidan URL tugmani topadi.
+    Avval 'batafsil/ariza' kabi so'zga mos tugmani qidiradi, topilmasa
+    postdagi BIRINCHI URL-tugmani qaytaradi (manba kanalda odatda
+    faqat bitta 'ariza yuborish' tugmasi bo'ladi)."""
     try:
         if message.buttons:
-            # 1) Kalit so'zga mos tugmani qidirish
-            for row in message.buttons:
-                for btn in row:
-                    url = getattr(btn, "url", None)
-                    label = (getattr(btn, "text", "") or "").lower()
-                    if url and any(k in label for k in APPLY_LINK_KEYWORDS):
-                        return url
-            # 2) Agar faqat bitta URL-tugma bo'lsa, o'shani olish
             url_buttons = [
-                getattr(btn, "url", None)
+                (getattr(btn, "text", "") or "", getattr(btn, "url", None))
                 for row in message.buttons
                 for btn in row
                 if getattr(btn, "url", None)
             ]
-            if len(url_buttons) == 1:
-                return url_buttons[0]
+            if not url_buttons:
+                return None
+            # 1) Kalit so'zga mos label'li tugmani qidirish
+            for label, url in url_buttons:
+                if any(k in label.lower() for k in APPLY_LINK_KEYWORDS):
+                    return url
+            # 2) Mos kelmasa ham, birinchi URL-tugmani olish
+            return url_buttons[0][1]
     except Exception:
         pass
     return None
@@ -280,9 +286,9 @@ def extract_link_from_text(text: str):
             m = URL_RE.search(line)
             if m:
                 return m.group(0)
-    # Agar kalit so'z topilmasa ham, matnda bitta link bo'lsa o'shani olish
+    # Agar kalit so'z topilmasa ham, matnda link(lar) bo'lsa birinchisini olish
     all_links = URL_RE.findall(text)
-    if len(all_links) == 1:
+    if all_links:
         return all_links[0]
     return None
 
@@ -399,6 +405,11 @@ async def main():
                 entity, min_id=last_id, reverse=True, limit=50
             ):
                 newest_id_seen = max(newest_id_seen, message.id)
+
+                # Cutoff sanadan oldingi postlarni butunlay o'tkazib yuborish
+                if message.date < CUTOFF_DATE:
+                    continue
+
                 post_text = extract_message_text(message)
 
                 if not is_vacancy(post_text):
