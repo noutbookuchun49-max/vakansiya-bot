@@ -33,7 +33,7 @@ if missing_env:
 API_ID = int(API_ID_RAW)
 
 # ============================================================
-# 2. KUZATILADIGAN KANALLAR  (militsiya_live OLIB TASHLANDI)
+# 2. KUZATILADIGAN KANALLAR
 # ============================================================
 CHANNELS = [
     "iivuz",
@@ -57,7 +57,10 @@ def load_state():
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+                return {}
         except Exception:
             return {}
     return {}
@@ -120,7 +123,7 @@ def extract_message_text(message) -> str:
 
 
 # ============================================================
-# 6. REKLAMA / VAKANSIYA EMASLARNI FILTRLASH  (ASOSIY MUAMMO)
+# 6. REKLAMA / VAKANSIYA EMASLARNI FILTRLASH
 # ============================================================
 VACANCY_KEYWORDS = [
     "vakansiya", "ish o'rni", "ish o'rniga", "talab etiladi", "talab qilinadi",
@@ -192,80 +195,21 @@ def detect_region(text: str):
 
 
 # ============================================================
-# 9. MAYDONLARNI MATNDAN AJRATIB OLISH
-# ============================================================
-FIELD_PATTERNS = {
-    "org": [r"tashkilot[:\-]\s*(.+)", r"kompaniya[:\-]\s*(.+)", r"muassasa[:\-]\s*(.+)", r"korxona[:\-]\s*(.+)"],
-    "position": [r"lavozim[:\-]\s*(.+)", r"vakansiya[:\-]\s*(.+)", r"kasb[:\-]\s*(.+)", r"ish o'rni[:\-]\s*(.+)"],
-    "salary": [r"maosh[:\-]\s*(.+)", r"ish haqi[:\-]\s*(.+)", r"oylik[:\-]\s*(.+)"],
-    "address": [r"manzil[:\-]\s*(.+)", r"joylashuv[:\-]\s*(.+)", r"address[:\-]\s*(.+)"],
-    "education": [r"ma'?lumot[:\-]\s*(.+)", r"ta'?lim[:\-]\s*(.+)"],
-    "experience": [r"tajriba[:\-]\s*(.+)", r"ish tajribasi[:\-]\s*(.+)"],
-    "age": [r"yosh[:\-]\s*(.+)"],
-    "extra_req": [r"qo'shimcha talab[:\-]\s*(.+)", r"talablar[:\-]\s*(.+)"],
-    "deadline": [r"muddat[:\-]\s*(.+)", r"ariza.*muddat[:\-]\s*(.+)"],
-}
-
-PHONE_RE = re.compile(r"(\+?998\s?-?\d{2}\s?-?\d{3}\s?-?\d{2}\s?-?\d{2})")
-
-
-def extract_field(text, keys, default="Berilmagan"):
-    for pattern in FIELD_PATTERNS[keys]:
-        m = re.search(pattern, text, flags=re.IGNORECASE)
-        if m:
-            val = m.group(1).strip()
-            val = val.split("\n")[0].strip(" .,-")
-            val = MENTION_RE.sub("", val).strip()
-            if val:
-                return val[:200]
-    return default
-
-
-def extract_contact(text, default="Berilmagan"):
-    m = PHONE_RE.search(text)
-    if m:
-        return m.group(1).strip()
-    return default
-
-
-# ============================================================
-# 10. YAKUNIY POST SHABLONINI QURISH
+# 9. YAKUNIY POST SHABLONINI QURISH (oddiy qolip)
 # ============================================================
 def build_vacancy_post(raw_text: str) -> str:
     cleaned = clean_source_text(raw_text)
-
-    org = extract_field(cleaned, "org")
-    position = extract_field(cleaned, "position")
-    salary = extract_field(cleaned, "salary")
-    address = extract_field(cleaned, "address")
-    education = extract_field(cleaned, "education")
-    experience = extract_field(cleaned, "experience")
-    age = extract_field(cleaned, "age")
-    extra_req = extract_field(cleaned, "extra_req")
-    deadline = extract_field(cleaned, "deadline")
-    contact = extract_contact(cleaned)
-
     region = detect_region(cleaned)
-    header = "📢 YANGI VAKANSIYA"
-    region_line = f"📍 {region}\n" if region else ""
+
+    header = "📢 YANGI DAVLAT VAKANSIYASI"
+    region_line = f"\n📍 VILOYAT: {region}" if region else ""
 
     post = (
-        f"{header}\n"
-        f"{region_line}"
-        f"🏢 Tashkilot: {org}\n"
-        f"💼 Lavozim: {position}\n"
-        f"💰 Maosh: {salary}\n"
-        f"📌 Manzil: {address}\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"📋 TALABLAR\n"
-        f"🎓 Ma'lumoti: {education}\n"
-        f"💼 Ish tajribasi: {experience}\n"
-        f"👤 Yosh: {age}\n"
-        f"🗣 Qo'shimcha talablar: {extra_req}\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"📅 Ariza topshirish muddati: {deadline}\n"
-        f"📞 Murojaat uchun: {contact}\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
+        f"{header}"
+        f"{region_line}\n\n"
+        f"{cleaned}\n\n"
+        f"Rezyume tayyorlashda sizga yordam beramiz 👇\n"
+        f"👉 {RESUME_LINK.replace('https://t.me/', '@')}\n"
         f"🔔 Yangi davlat vakansiyalarini o'tkazib yubormang!\n"
         f"📲 Kanalimizga obuna bo'ling:\n"
         f"👉 {CHANNEL_TAG}"
@@ -280,7 +224,7 @@ def trim_caption(text: str, limit: int) -> str:
 
 
 # ============================================================
-# 11. YUBORISH (FloodWait bilan, tugma bilan, forward EMAS)
+# 10. YUBORISH (FloodWait bilan, tugma bilan, forward EMAS)
 # ============================================================
 async def send_vacancy_post(bot_client, target, caption, image_path):
     buttons = [Button.url("📄 REZYUME KERAKMI?", RESUME_LINK)]
@@ -309,7 +253,7 @@ async def send_vacancy_post(bot_client, target, caption, image_path):
 
 
 # ============================================================
-# 12. ASOSIY JARAYON
+# 11. ASOSIY JARAYON
 # ============================================================
 async def main():
     print("Telegram clientlar ishga tushmoqda...")
