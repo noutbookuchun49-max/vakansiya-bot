@@ -1,0 +1,31 @@
+name: Resume Post
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 08:00 Toshkent (UTC+5)
+    - cron: '0 7 * * *'   # 12:00 Toshkent
+    - cron: '0 13 * * *'  # 18:00 Toshkent
+  workflow_dispatch:
+
+jobs:
+  post-resume:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo checkout
+        uses: actions/checkout@v4
+
+      - name: Python o'rnatish
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Kutubxonalarni o'rnatish
+        run: pip install telethon
+
+      - name: Resume post yuborish
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TARGET_CHANNEL: ${{ secrets.TARGET_CHANNEL }}
+        run: python resume_post.py
