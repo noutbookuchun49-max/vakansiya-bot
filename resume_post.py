@@ -35,41 +35,37 @@ def trim_caption(text: str, limit: int) -> str:
     return text[:limit - 3].rstrip() + "..."
 
 
-RESUME_TEXT = """📄 REZYUME NIMA VA NIMA UCHUN KERAK?
-🤔 Ishga topshirayotganda sizdan rezyume so'rashdimi? Unda rezyume nima ekanini bilishingiz kerak!
-📌 Rezyume (CV) — bu siz haqingizdagi qisqa ma'lumotnoma. Unda ish beruvchi sizning ma'lumotingiz, ish tajribangiz, kasbingiz, ko'nikmalaringiz va boshqa muhim ma'lumotlaringiz bilan tanishadi.
-🎯 Nima uchun rezyume kerak?
-🔹 Ish beruvchi siz haqingizda dastlabki ma'lumotni oladi
-🔹 Sizning tajriba va ko'nikmalaringizni ko'rsatadi
-🔹 Qaysi lavozimga mos kelishingizni baholashga yordam beradi
-🔹 Suhbatga chaqirilish imkoniyatingizni oshiradi
-❌ Rezyume bo'lmasa nima bo'ladi?
-Ba'zi tashkilot va kompaniyalar vakansiyaga ariza topshirishda rezyumeni majburiy talab qiladi. Rezyume bo'lmasa, arizangiz qabul qilinmasligi yoki siz boshqa nomzodlardan ortda qolishingiz mumkin.
-⚠️ Oddiy yozilgan yoki xatolarga to'la rezyume ham imkoniyatingizga ta'sir qilishi mumkin.
-✨ Yaxshi tayyorlangan rezyume — ish topish yo'lidagi birinchi qadam!
-📄 REZYUME KERAKMI?
-Rezyume tayyorlashni bilmayapsizmi yoki professional rezyume kerakmi?
-🤝 Biz sizga yordam beramiz!
-👉 @rezumekerakmi
-📢 Davlat vakansiyalarini kuzatib boring:
-👉 @davlat_vakansiyalar
-#Rezyume #CV #Ish #Vakansiya #DavlatIshi #IshQidirish"""
+RESUME_TEXT = """📄 REZYUME — ISH TOPISHNING BIRINCHI QADAMI
+
+Ish qidirayotganda ko'pincha rezyume (CV) talab qilinadi. Bu — tajriba, ko'nikma va yutuqlaringiz haqidagi qisqa, tartibli taqdimot.
+
+✅ Nega kerak?
+🔹 Ish beruvchiga o'zingizni tanishtirasiz
+🔹 Boshqa nomzodlar orasida ajralib turasiz
+🔹 Suhbatga chaqirilish imkoniyati oshadi
+
+❌ Rezyume bo'lmasa, arizangiz ko'rib chiqilmasligi yoki e'tiborsiz qolib ketishi mumkin.
+
+✨ Professional, xatosiz rezyume — muvaffaqiyatga birinchi qadam!
+
+Bizga murojaat qiling 👇👇👇
+📄 Rezyume tayyorlab beramiz: @rezumekerakmi
+📢 Yangi davlat vakansiyalari: @davlat_vakansiyalar
+
+#Rezyume #CV #Ish #Vakansiya #IshQidirish"""
 
 
 async def main():
     client = TelegramClient('bot_session', API_ID, API_HASH)
     await client.start(bot_token=BOT_TOKEN)
-
     image_path = find_image_by_prefix("8")
     buttons = [Button.url("📄 REZYUME KERAKMI?", RESUME_LINK)]
-
     if image_path and os.path.exists(image_path):
         caption = trim_caption(RESUME_TEXT, MAX_CAPTION_LEN)
         await client.send_file(TARGET_CHANNEL, file=image_path, caption=caption, buttons=buttons)
     else:
         text = trim_caption(RESUME_TEXT, MAX_TEXT_LEN)
         await client.send_message(TARGET_CHANNEL, text, buttons=buttons)
-
     print("Rezyume posti yuborildi.")
     await client.disconnect()
 
