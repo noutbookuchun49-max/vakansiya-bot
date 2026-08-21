@@ -38,11 +38,11 @@ API_ID = int(API_ID_RAW)
 # 2. KUZATILADIGAN KANALLAR
 # ============================================================
 CHANNELS = [
-    "iivuz",
     "vakansyuz",
     "mahalladosh_tv",
     "militsiya_102",
     "vacancy_argos",
+    "toshkentda_ishbor_ozbekistonda",
 ]
 
 STATE_FILE = "posted_ids.json"
@@ -281,7 +281,7 @@ def extract_apply_link(message, text):
 # ============================================================
 # 9. YAKUNIY POST SHABLONINI QURISH (oddiy qolip)
 # ============================================================
-def build_vacancy_post(raw_text: str, apply_info=None) -> str:
+def build_vacancy_post(raw_text: str, apply_info=None, max_len: int = None) -> str:
     # 'text' turidagi link matnda ochiq https://... shaklida bo'lgani uchun
     # uni tozalashda saqlab qolamiz (reklama linklari esa baribir tozalanadi)
     keep_url = apply_info["url"] if apply_info and apply_info["source"] == "text" else None
@@ -290,6 +290,7 @@ def build_vacancy_post(raw_text: str, apply_info=None) -> str:
 
     header = "📢 YANGI DAVLAT VAKANSIYASI"
     region_line = f"\n📍 VILOYAT: {region}" if region else ""
+    header_block = f"{header}{region_line}\n\n"
 
     # 'hidden' turidagi link (matn ichidagi yashirin hyperlink) uchun
     # xuddi manbadagidek, matn ichida bosiladigan havola qilib qo'shamiz
@@ -298,21 +299,33 @@ def build_vacancy_post(raw_text: str, apply_info=None) -> str:
         label = apply_info["label"] or "Batafsil"
         link_line = f"\n\n🔗 [{label}]({apply_info['url']})"
 
-    post = (
-        f"{header}"
-        f"{region_line}\n\n"
-        f"{cleaned}"
-        f"{link_line}\n\n"
-        f"Rezyume tayyorlashda sizga yordam beramiz 👇\n"
+    footer = (
+        f"\n\nRezyume tayyorlashda sizga yordam beramiz 👇\n"
         f"👉 {RESUME_LINK.replace('https://t.me/', '@')}\n"
         f"🔔 Yangi davlat vakansiyalarini o'tkazib yubormang!\n"
         f"📲 Kanalimizga obuna bo'ling:\n"
         f"👉 {CHANNEL_TAG}"
     )
-    return post
+
+    body = f"{cleaned}{link_line}"
+
+    # Agar limit berilgan bo'lsa, FAQAT vakansiya matnini (body) qisqartiramiz,
+    # header va footer (kanal linki) HECH QACHON kesilmaydi — doim to'liq ko'rinadi.
+    if max_len is not None:
+        reserved = len(header_block) + len(footer) + 3  # "..." uchun joy
+        available = max_len - reserved
+        if available < 0:
+            available = 0
+        if len(body) > available:
+            body = body[:available].rstrip() + "..."
+
+    return f"{header_block}{body}{footer}"
 
 
 def trim_caption(text: str, limit: int) -> str:
+    """Zaxira (safety-net) funksiya — build_vacancy_post limitni allaqachon
+    to'g'ri hisobga oladi, lekin agar biror joyda limit oshib ketsa,
+    shu funksiya oxirgi chegara sifatida ishlatilishi mumkin."""
     if len(text) <= limit:
         return text
     return text[:limit - 3].rstrip() + "..."
@@ -335,14 +348,14 @@ async def send_vacancy_post(bot_client, target, caption, image_path, apply_butto
                 await bot_client.send_file(
                     target,
                     file=image_path,
-                    caption=trim_caption(caption, MAX_CAPTION_LEN),
+                    caption=caption,
                     buttons=buttons,
                     parse_mode='md',
                 )
             else:
                 await bot_client.send_message(
                     target,
-                    trim_caption(caption, MAX_TEXT_LEN),
+                    caption,
                     buttons=buttons,
                     parse_mode='md',
                 )
@@ -387,18 +400,23 @@ async def main():
         newest_id_seen = last_id
         posted_count = 0
         skipped_ad = 0
+        skipped_old_date = 0
+        total_fetched = 0
 
         try:
             entity = await user_client.get_entity(ch)
+            print(f"  Boshlanish ID (last_id) = {last_id}")
 
             # eskisidan yangisiga qarab, TARTIB buzilmasin
             async for message in user_client.iter_messages(
                 entity, min_id=last_id, reverse=True, limit=50
             ):
+                total_fetched += 1
                 newest_id_seen = max(newest_id_seen, message.id)
 
                 # Cutoff sanadan oldingi postlarni butunlay o'tkazib yuborish
                 if message.date < CUTOFF_DATE:
+                    skipped_old_date += 1
                     continue
 
                 post_text = extract_message_text(message)
@@ -409,9 +427,11 @@ async def main():
 
                 apply_info = extract_apply_link(message, post_text)
                 apply_button = apply_info if apply_info and apply_info["source"] == "button" else None
-
-                final_caption = build_vacancy_post(post_text, apply_info)
                 image_path = get_matching_image(post_text, ch)
+
+                # Rasm bilan yuborilsa caption limiti (1024), matn bo'lsa (4096) qo'llanadi
+                limit = MAX_CAPTION_LEN if (image_path and os.path.exists(image_path)) else MAX_TEXT_LEN
+                final_caption = build_vacancy_post(post_text, apply_info, max_len=limit)
 
                 ok = await send_vacancy_post(bot_client, TARGET_CHANNEL, final_caption, image_path, apply_button)
                 if ok:
@@ -423,7 +443,9 @@ async def main():
 
             state[ch] = newest_id_seen
             save_state(state)
-            print(f"Xulosa [{ch}]: {posted_count} ta vakansiya joylandi, {skipped_ad} ta reklama/mos kelmagan post o'tkazib yuborildi.")
+            print(f"  Telegram'dan jami olingan xabarlar: {total_fetched} ta")
+            print(f"  Eng oxirgi ko'rilgan ID (yangilandi) = {newest_id_seen}")
+            print(f"Xulosa [{ch}]: {posted_count} ta vakansiya joylandi, {skipped_ad} ta reklama/mos kelmagan, {skipped_old_date} ta eski sana (cutoff'dan oldin) sabab o'tkazib yuborildi.")
 
         except Exception as e:
             print(f"XATO [{ch!r}]: {type(e).__name__} - {e}")
