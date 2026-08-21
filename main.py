@@ -88,37 +88,87 @@ def find_image_by_prefix(prefix):
     return None
 
 
+# So'z chegaralarini aniqlashda harflar (lotin + apostrof turlari) hisobga olinadi,
+# shunda "it" so'zi "tibbiyot", "ishlatish" kabi so'zlar ICHIDA topilib,
+# noto'g'ri kategoriya tanlanishining oldi olinadi.
+_WORD_CHARS = "a-zA-Zʻʼʹ'’"
+
+
+def _has_keyword(text_lower: str, keyword: str) -> bool:
+    pattern = rf"(?<![{_WORD_CHARS}]){re.escape(keyword)}(?![{_WORD_CHARS}])"
+    return re.search(pattern, text_lower) is not None
+
+
+# Kategoriya -> rasm prefiksi va unga tegishli KALIT SO'ZLAR (aniq, uzun so'zlar,
+# 2-3 harfli umumiy qisqartmalar ishlatilmaydi, chunki ular boshqa so'zlar
+# ichida tasodifan uchrab, noto'g'ri rasm tanlashga sabab bo'ladi)
+IMAGE_CATEGORIES = {
+    "Police_officer": [
+        "militsiya", "patrul", "qo'riqlash", "soqchi", "oxrana",
+        "ichki ishlar", "akademiya", "iib",
+    ],
+    "Bank_employee": [
+        "bank", "kassa", "kassir", "moliya", "buxgalter",
+    ],
+    "Chef_plating": [
+        "oshpaz", "povar", "oshxona", "restoran", "konditer", "kafe",
+    ],
+    "Cleaner_cleaning": [
+        "farrosh", "tozalik", "uborka", "tozalovchi",
+    ],
+    "Construction_worker": [
+        "qurilish", "prorab", "ustaxona", "quruvchi", "montajchi",
+    ],
+    "Doctor_smiling": [
+        "shifokor", "vrach", "hamshira", "tibbiyot", "doktor",
+    ],
+    "Lawyer_standing": [
+        "yurist", "advokat", "huquqshunos",
+    ],
+    "Shop_seller": [
+        "sotuvchi", "magazin", "do'kon", "market",
+    ],
+    "Software_developer": [
+        "dasturchi", "dasturlash", "backend", "frontend", "fullstack",
+        "full-stack", "veb-dasturchi", "python dasturchi",
+        "it mutaxassisi", "dastur ta'minoti",
+    ],
+    "Teacher_explaining": [
+        "o'qituvchi", "ustoz", "pedagog", "muallim",
+    ],
+    "Truck_driver": [
+        "haydovchi", "shofyor", "dostavka",
+    ],
+    "Operator_working": [
+        "operator", "call-center", "callcenter",
+    ],
+}
+
+
 def get_matching_image(text, channel_name):
     # vacancy_argos uchun DOIMIY rasm (7-prefiks)
     if channel_name == "vacancy_argos":
         return find_image_by_prefix("7")
 
     text_lower = text.lower() if text else ""
-    if any(w in text_lower for w in ["iib", "militsiya", "patrul", "qo'riqlash", "soqchi", "oxrana", "ichki ishlar", "akademiya", "102"]):
-        return find_image_by_prefix("Police_officer")
-    elif any(w in text_lower for w in ["bank", "kassa", "kassir", "moliya", "buxgalter"]):
-        return find_image_by_prefix("Bank_employee")
-    elif any(w in text_lower for w in ["oshpaz", "povar", "oshxona", "restoran"]):
-        return find_image_by_prefix("Chef_plating")
-    elif any(w in text_lower for w in ["farrosh", "tozalik", "uborka"]):
-        return find_image_by_prefix("Cleaner_cleaning")
-    elif any(w in text_lower for w in ["qurilish", "prorab", "ustoxona"]):
-        return find_image_by_prefix("Construction_worker")
-    elif any(w in text_lower for w in ["shifokor", "vrach", "hamshira", "tibbiyot"]):
-        return find_image_by_prefix("Doctor_smiling")
-    elif any(w in text_lower for w in ["yurist", "advokat", "huquq"]):
-        return find_image_by_prefix("Lawyer_standing")
-    elif any(w in text_lower for w in ["sotuvchi", "magazin", "do'kon"]):
-        return find_image_by_prefix("Shop_seller")
-    elif any(w in text_lower for w in ["dasturchi", "python", "it", "web"]):
-        return find_image_by_prefix("Software_developer")
-    elif any(w in text_lower for w in ["o'qituvchi", "ustoz", "pedagog"]):
-        return find_image_by_prefix("Teacher_explaining")
-    elif any(w in text_lower for w in ["haydovchi", "shofyor", "dostavka"]):
-        return find_image_by_prefix("Truck_driver")
-    elif any(w in text_lower for w in ["operator", "call-center"]):
-        return find_image_by_prefix("Operator_working")
+
+    best_prefix = None
+    best_score = 0
+    for prefix, keywords in IMAGE_CATEGORIES.items():
+        score = sum(1 for kw in keywords if _has_keyword(text_lower, kw))
+        if score > best_score:
+            best_score = score
+            best_prefix = prefix
+
+    if best_prefix:
+        img = find_image_by_prefix(best_prefix)
+        if img:
+            return img
+
+    # Hech qanday kategoriya aniq mos kelmasa (yoki rasm topilmasa) — standart rasm
     return find_image_by_prefix("7")
+
+
 
 
 # ============================================================
@@ -408,8 +458,10 @@ async def main():
             print(f"  Boshlanish ID (last_id) = {last_id}")
 
             # eskisidan yangisiga qarab, TARTIB buzilmasin
+            # limit=None -> min_id'dan keyingi BARCHA xabarlarni oladi (chegarasiz),
+            # shunda bir martada to'liq bugungi kunga yetib boradi
             async for message in user_client.iter_messages(
-                entity, min_id=last_id, reverse=True, limit=50
+                entity, min_id=last_id, reverse=True, limit=None
             ):
                 total_fetched += 1
                 newest_id_seen = max(newest_id_seen, message.id)
